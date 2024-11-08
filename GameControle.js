@@ -1,18 +1,14 @@
 const Components = require('./models/Components');
 const Block = require('./models/Block');
 const JsonLoaders = require('./utility/jsonLoaders');
-const readline = require('readline');
-  
+
 class GameControle {
-  constructor() {
+  constructor(ui) {
     this.selectedPieces = [];
     this.availablePieces = [];
     this._gameComponents = null;
     this.moveHistory = [];
-    this.rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout
-    });
+    this.ui = ui;
   }
 
   async _loadComponents() {
@@ -22,37 +18,20 @@ class GameControle {
       this.availablePieces = [...this._gameComponents.pieces];
       return true;
     } catch (error) {
-      console.error("Error loading components:", error);
+      this.ui.printMessage("Error loading components: " + error);
       return false;
     }
   }
 
-  printBoard() {
-    console.log("Current board:");
-    this._gameComponents.board.values.forEach(row => {
-      console.log(row.map(val => (val === -1 ? '!' : val)).join(' '));
-    });
-  }
-
-  printAvailablePieces() {
-    console.log("Available Pieces:");
-    for (const piece of this.availablePieces) {
-      this.printPiece(piece);
-    }
-  }
 
   printPiece(piece) {
     const { maxX, maxY, minX, minY } = this.getPieceBounds(piece);
-
     const board = Array.from({ length: maxY - minY + 1 }, () => Array(maxX - minX + 1).fill(' '));
-
     piece.blocks.forEach(block => {
       board[block.y - minY][block.x - minX] = `${piece.id}`;
     });
-
-    console.log(`Piece ${piece.id}:`);
-    board.forEach(row => console.log(row.join('')));
-    console.log();
+    this.ui.printMessage(`Piece ${piece.id}:`);
+    board.forEach(row => this.ui.printMessage(row.join('')));
   }
 
   getPieceBounds(piece) {
@@ -64,67 +43,56 @@ class GameControle {
   }
 
   async selectPieceAndPlace() {
-    const piece = await this.promptPieceSelection();
+    const pieceNumber = await this.ui.pieceSelection()
+    const piece = await this.promptPieceSelection(pieceNumber);
     if (!piece) return false;
 
     const { x: startX, y: startY } = await this.promptPositionSelection();
     const offset = new Block(startX, startY);
 
     if (!this.validateOffset(piece, offset)) {
-      console.error("Invalid position for this piece");
+      this.ui.printMessage("Invalid position for this piece");
       return false;
     } else {
       this.saveMoveState(piece, offset);
-      console.log("Piece added successfully");
+      this.ui.printMessage("Piece added successfully");
       return true;
     }
   }
-  
+
   async undoMove() {
     if (this.moveHistory.length === 0) {
-      console.log("No moves to undo.");
+      this.ui.printMessage("No moves to undo.");
       return;
     }
     this.moveHistory.pop();
     if (this.moveHistory.length === 0) {
-      await this._loadComponents()
+      await this._loadComponents();
       return;
     }
     const lastMove = this.moveHistory.at(-1);
-      console.log(lastMove)
-      this._gameComponents.board.values = lastMove.boardSnapshot.map(row => [...row]);
-
-      this.availablePieces.push(lastMove.piece);
+    this._gameComponents.board.values = lastMove.boardSnapshot.map(row => [...row]);
+    this.availablePieces.push(lastMove.piece);
   }
 
-
-  async promptPieceSelection() {
-    const pieceNumber = await this.promptUser("Enter the piece number you want to select (or type 'undo' to undo last move): ");
-
-    if (pieceNumber.toLowerCase() === 'undo') {
+  async promptPieceSelection(pieceNumber) {
+    if (pieceNumber === 'undo') {
       this.undoMove();
       return null;
     }
-    
     const piece = this.availablePieces.find(p => p.id === parseInt(pieceNumber));
-
     if (!piece) {
-      console.error("Invalid piece number. Please try again.");
+      this.ui.printMessage("Invalid piece number. Please try again.");
       return null;
     }
     return piece;
   }
 
-  async promptUser(question) {
-    return new Promise(resolve => this.rl.question(question, resolve));
-  }
-
   async promptPositionSelection() {
-    const x = await this.promptUser("Enter the x coordinate for the starting position: ");
-    const y = await this.promptUser("Enter the y coordinate for the starting position: ");
+    const x = await this.ui.promptUser("Enter the x coordinate for the starting position: ");
+    const y = await this.ui.promptUser("Enter the y coordinate for the starting position: ");
     return { x: parseInt(x), y: parseInt(y) };
   }
-
 
   validateOffset(piece, offset) {
     for (const block of piece.blocks) {
@@ -140,13 +108,11 @@ class GameControle {
         return false;
       }
     }
-
     piece.blocks.forEach(block => {
       const newY = block.y + offset.y;
       const newX = block.x + offset.x;
       this._gameComponents.board.values[newY][newX] = piece.id;
     });
-
     this.selectedPieces.push(piece);
     this.availablePieces = this.availablePieces.filter(p => p.id !== piece.id);
     return true;
@@ -164,17 +130,15 @@ class GameControle {
   async startGame() {
     if (!await this._loadComponents()) return;
     while (this.availablePieces.length > 0) {
-      this.printBoard();
-      this.printAvailablePieces();
+      this.ui.printBoard(this._gameComponents.board.values);
+      this.ui.printAvailablePieces(this.availablePieces, piece => this.printPiece(piece));
+      
       await this.selectPieceAndPlace();
     }
     this.printBoard();
-    console.log("You have successfully solved the GameControle.");
-
-    this.rl.close();
+    this.ui.printMessage("You have successfully solved the GameControle.");
+    this.ui.close();
   }
 }
-
-
 
 module.exports = GameControle;
