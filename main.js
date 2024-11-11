@@ -1,8 +1,9 @@
-const GameControle = require('./GameControle');
+const GameController = require('./GameController');
 const GameUI = require('./GameUI');
 
 (async () => {
-  const ui = new GameUI();
-  const gameControle = new GameControle(ui);
-  await gameControle.startGame();
+    const gameControle = new GameController();
+    const ui = new GameUI(gameControle);
+
+    await ui.startGame();
 })();
